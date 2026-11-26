@@ -1,0 +1,5 @@
+DB_PATH = "claims.db"
+DB_PASSWORD = "Meridian#Claims2020!"
+ADMIN_PASSWORD = "admin123"
+PAYMENT_API_TOKEN = "meridian-pay-token-7f3a9c41"
+SESSION_SECRET = "meridian-secret-2020"
