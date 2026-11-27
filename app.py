@@ -18,11 +18,30 @@ _HOLDER_RE = re.compile(r"^[A-Za-z0-9 .,'@_-]{1,128}$")
 _NAME_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 _REPORT_FILE_RE = re.compile(r"^[A-Za-z0-9_-][A-Za-z0-9_.-]{0,127}$")
 _ALLOWED_FORMATS = frozenset({"csv"})
+# Roles explicitly granted access to report export/download (deny by default).
+_REPORT_ROLES = frozenset({"admin", "reports"})
 
 
 def _current_user():
     """Return the authenticated user id from the server-side session, or None."""
     return session.get("user_id")
+
+
+def _require_user():
+    """Abort with 401 unless the request carries an authenticated session."""
+    user = _current_user()
+    if user is None:
+        abort(401)
+    return user
+
+
+def _require_report_access():
+    """Require an authenticated user holding an explicitly allowed report role."""
+    user = _require_user()
+    role = session.get("role")
+    if role not in _REPORT_ROLES:
+        abort(403)
+    return user
 
 
 def _claim_owner(claim):
@@ -35,10 +54,14 @@ def _claim_owner(claim):
 
 @app.route("/api/claims/search")
 def search_claims():
+    user = _require_user()
     holder = request.args.get("holder", "")
     if not _HOLDER_RE.fullmatch(holder):
         abort(400, description="Invalid holder parameter.")
-    return jsonify(claims.find_by_holder(holder))
+    results = claims.find_by_holder(holder) or []
+    # Scope results to claims owned by the authenticated user.
+    owned = [c for c in results if str(_claim_owner(c)) == str(user)]
+    return jsonify(owned)
 
 
 @app.route("/api/claims/<claim_id>")
@@ -55,6 +78,7 @@ def get_claim(claim_id):
 
 @app.route("/api/reports/export")
 def export_report():
+    _require_report_access()
     fmt = request.args.get("format", "csv")
     name = request.args.get("name", "claims")
     if fmt not in _ALLOWED_FORMATS:
@@ -67,6 +91,7 @@ def export_report():
 
 @app.route("/api/reports/download")
 def download_report():
+    _require_report_access()
     filename = request.args.get("file", "")
     if (
         not _REPORT_FILE_RE.fullmatch(filename)
